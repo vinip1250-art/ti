@@ -20,6 +20,19 @@ type Redis struct {
 }
 
 func NewRedis() *Redis {
+	// REDIS_URL takes priority (Render, Railway, Heroku, etc. provide this format)
+	// e.g. redis://:password@host:6379 or rediss://:password@host:6379
+	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
+		opts, err := redis.ParseURL(redisURL)
+		if err == nil {
+			return &Redis{
+				client:            redis.NewClient(opts),
+				defaultExpiration: DefaultExpiration,
+			}
+		}
+	}
+
+	// Fallback: individual REDIS_HOST + REDIS_PASSWORD env vars
 	redisHost := os.Getenv("REDIS_HOST")
 	if redisHost == "" {
 		redisHost = "localhost"
