@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: torrent-indexer
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free # troque para "starter" ou superior se precisar de mais recursos
+
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: torrent-indexer-redis
+          property: connectionString
+
+      # Logging: 0=debug, 1=info, 2=warn, 3=error
+      - key: LOG_LEVEL
+        value: "1"
+
+      # FlareSolverr (opcional) — deixe vazio para desativar
+      # - key: FLARESOLVERR_ADDRESS
+      #   value: "https://seu-flaresolverr.onrender.com"
+
+      # Meilisearch (opcional) — deixe vazio para desativar
+      # - key: MEILISEARCH_ADDRESS
+      #   value: "https://seu-meilisearch.onrender.com"
+      # - key: MEILISEARCH_KEY
+      #   value: "sua-chave"
+
+      # Cache (opcional)
+      # - key: SHORT_LIVED_CACHE_EXPIRATION
+      #   value: "30m"
+      # - key: LONG_LIVED_CACHE_EXPIRATION
+      #   value: "168h"
+
+      # IMDB / fallback de título (opcional)
+      # - key: FALLBACK_TITLE_ENABLED
+      #   value: "true"
+
+databases:
+  - type: redis
+    name: torrent-indexer-redis
+    plan: free
+    ipAllowList: [] # só permite acesso interno (mais seguro)
