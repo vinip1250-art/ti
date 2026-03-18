@@ -1,3 +1,33 @@
+// Adicionar no topo do arquivo
+var (
+    memTrackers     []string
+    memTrackersMu   sync.RWMutex
+    memTrackersTTL  time.Time
+)
+
+func getAdditionalTrackers(ctx context.Context, r *cache.Redis) []string {
+    memTrackersMu.RLock()
+    if time.Now().Before(memTrackersTTL) && len(memTrackers) > 0 {
+        defer memTrackersMu.RUnlock()
+        return memTrackers
+    }
+    memTrackersMu.RUnlock()
+
+    // busca no Redis/GitHub normalmente...
+    dynamic, err := fetchDynamicTrackers(ctx, r)
+    trackers := dynamic
+    if err != nil || len(trackers) == 0 {
+        trackers = staticAdditionalTrackers
+    }
+
+    memTrackersMu.Lock()
+    memTrackers = trackers
+    memTrackersTTL = time.Now().Add(24 * time.Hour)
+    memTrackersMu.Unlock()
+
+    return trackers
+}
+
 package goscrape
 
 import (
