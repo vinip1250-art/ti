@@ -1,33 +1,3 @@
-// Adicionar no topo do arquivo
-var (
-    memTrackers     []string
-    memTrackersMu   sync.RWMutex
-    memTrackersTTL  time.Time
-)
-
-func getAdditionalTrackers(ctx context.Context, r *cache.Redis) []string {
-    memTrackersMu.RLock()
-    if time.Now().Before(memTrackersTTL) && len(memTrackers) > 0 {
-        defer memTrackersMu.RUnlock()
-        return memTrackers
-    }
-    memTrackersMu.RUnlock()
-
-    // busca no Redis/GitHub normalmente...
-    dynamic, err := fetchDynamicTrackers(ctx, r)
-    trackers := dynamic
-    if err != nil || len(trackers) == 0 {
-        trackers = staticAdditionalTrackers
-    }
-
-    memTrackersMu.Lock()
-    memTrackers = trackers
-    memTrackersTTL = time.Now().Add(24 * time.Hour)
-    memTrackersMu.Unlock()
-
-    return trackers
-}
-
 package goscrape
 
 import (
@@ -37,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/felipemarinho97/torrent-indexer/cache"
@@ -46,6 +17,13 @@ import (
 const (
 	trackersListCacheKey        = "dynamic_trackers_list"
 	trackersListCacheExpiration = 24 * time.Hour
+)
+
+// cache em memória para evitar reads excessivos no Redis
+var (
+	memTrackers    []string
+	memTrackersMu  sync.RWMutex
+	memTrackersTTL time.Time
 )
 
 var trackersListURLs = []string{
@@ -133,17 +111,32 @@ func fetchDynamicTrackers(ctx context.Context, r *cache.Redis) ([]string, error)
 }
 
 // getAdditionalTrackers returns dynamic trackers with fallback to static ones
+// usa cache em memória para evitar 1 GET Redis por torrent por requisição
 func getAdditionalTrackers(ctx context.Context, r *cache.Redis) []string {
-	// Try to get dynamic trackers first
-	dynamicTrackers, err := fetchDynamicTrackers(ctx, r)
-	if err == nil && len(dynamicTrackers) > 0 {
-		logging.Debug().Int("count", len(dynamicTrackers)).Msg("Using dynamic trackers")
-		return dynamicTrackers
+	memTrackersMu.RLock()
+	if time.Now().Before(memTrackersTTL) && len(memTrackers) > 0 {
+		t := memTrackers
+		memTrackersMu.RUnlock()
+		return t
+	}
+	memTrackersMu.RUnlock()
+
+	// busca no Redis/GitHub normalmente
+	dynamic, err := fetchDynamicTrackers(ctx, r)
+	trackers := dynamic
+	if err != nil || len(trackers) == 0 {
+		logging.Warn().Err(err).Msg("Falling back to static trackers")
+		trackers = staticAdditionalTrackers
+	} else {
+		logging.Debug().Int("count", len(trackers)).Msg("Using dynamic trackers")
 	}
 
-	// Fallback to static trackers
-	logging.Warn().Err(err).Msg("Falling back to static trackers")
-	return staticAdditionalTrackers
+	memTrackersMu.Lock()
+	memTrackers = trackers
+	memTrackersTTL = time.Now().Add(24 * time.Hour)
+	memTrackersMu.Unlock()
+
+	return trackers
 }
 
 var staticAdditionalTrackers = []string{
